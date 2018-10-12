@@ -20,6 +20,7 @@ from pyasn1.type import useful
 import tarfile
 from shutil import rmtree
 import tempfile
+import zipfile
 
 migrate = Migrate(app, db)
 
@@ -36,19 +37,30 @@ manager.add_command('certificates', certificates_subcommands)
 def mail_certificate(id, email):
         workdir = tempfile.mkdtemp()
         cert_createTar(id, workdir)
+        cert_createZip(id, workdir)
         msg = Message(
                 app.config['MAIL_SUBJECT'],
                 sender=app.config['MAIL_FROM'],
                 recipients=[email]
                 )
         msg.body = render_template('mail.txt')
-        certificate_path = "{}/freifunk_{}.tgz".format(workdir, id)
-        with app.open_resource(certificate_path) as fp:
+
+        certificate_path_tgz = "{}/freifunk_{}.tgz".format(workdir, id)
+        certificate_path_zip = "{}/freifunk_{}.zip".format(workdir, id)
+
+        with app.open_resource(certificate_path_tgz) as fp:
             msg.attach(
                     "freifunk_{}.tgz".format(id),
                     "application/gzip",
                     fp.read()
                     )
+        with app.open_resource(certificate_path_zip) as fp:
+            msg.attach(
+                "freifunk_{}.zip".format(id),
+                "application/zip",
+                fp.read()
+            )
+
         mail.send(msg)
         rmtree(workdir)
 
@@ -223,6 +235,17 @@ def cert_createTar(certid, directory):
     for templatefile in listdir('ca/templates/vpn03-files'):
         certtar.add(join('ca/templates/vpn03-files', templatefile), templatefile)
     certtar.close()
+
+
+def cert_createZip(certid, directory):
+    """
+    create a zip-archive with the default-config and users certificate
+    """
+    with zipfile.ZipFile(join(directory, 'freifunk_{}.zip'.format(certid)), 'w') as zip_file:
+        zip_file.write(join(app.config['DIRECTORY'], 'freifunk_{}.key'.format(certid)), ('VPN03_{}.key'.format(certid)))
+        zip_file.write(join(app.config['DIRECTORY'], 'freifunk_{}.crt'.format(certid)), ('VPN03_{}.crt'.format(certid)))
+        for templatefile in listdir('ca/templates/vpn03-files'):
+            zip_file.write(join('ca/templates/vpn03-files', templatefile), templatefile)
 
 
 if __name__ == '__main__':
